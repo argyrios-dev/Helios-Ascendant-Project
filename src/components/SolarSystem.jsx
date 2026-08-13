@@ -103,7 +103,7 @@ const PLANETS = [
     semiMajorAxisAU: 43.218, eccentricity: 0.191, periodDays: 103774,
     inclinationDeg: 28.2, ascendingNodeDeg: 121.9, argumentPeriapsisDeg: 240.6,
     meanAnomalyJ2000Deg: 209.1, axialTiltDeg: 126, rotationPeriodDays: 0.1631,
-    visualRadius: 0.27, surfaceType: 5, seed: 11.83, relief: 0.006, shape: [1.363, 1, 0.668],
+    visualRadius: 0.27, surfaceType: 5, seed: 11.83, relief: 0.0015, shape: [1, 1, 1],
     colors: ['#77736e', '#d8d4cb', '#ffffff'],
   },
   {
