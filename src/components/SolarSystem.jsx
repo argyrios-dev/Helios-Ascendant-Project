@@ -11,22 +11,10 @@ const SOLAR_MU_KM3_S2 = 132_712_440_018
 const VISUAL_AU = 20
 const BASE_DAYS_PER_SECOND = 1
 const TELEMETRY_INTERVAL_SECONDS = 0.12
-const TEXTURE_ORIGIN = 'https://www.solarsystemscope.com/textures/download'
+const TEXTURE_CDN = 'https://cdn.jsdelivr.net/gh/stirlo/oursquadis.top@main'
 const EARTH_NORMAL_URL = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r185/examples/textures/planets/earth_normal_2048.jpg'
 
 const degrees = (value) => THREE.MathUtils.degToRad(value)
-
-function textureTier() {
-  if (typeof window === 'undefined' || typeof navigator === 'undefined') return '2k'
-
-  const longEdge = Math.max(window.innerWidth, window.innerHeight)
-  const deviceMemory = navigator.deviceMemory ?? (longEdge >= 1400 ? 8 : 4)
-  const reducedData = navigator.connection?.saveData === true
-
-  return !reducedData && deviceMemory >= 8 && longEdge >= 1400 ? '8k' : '2k'
-}
-
-const ACTIVE_TEXTURE_TIER = textureTier()
 
 const PLANETS = [
   {
@@ -252,8 +240,7 @@ function orbitalSpeedKms(body, radiusAU) {
 }
 
 function makeTextureUrl(textureName) {
-  const tier = textureName === 'uranus' || textureName === 'neptune' ? '2k' : ACTIVE_TEXTURE_TIER
-  return `${TEXTURE_ORIGIN}/${tier}_${textureName}.jpg`
+  return `${TEXTURE_CDN}/2k_${textureName}.jpg`
 }
 
 function useManagedTextures(urls) {
