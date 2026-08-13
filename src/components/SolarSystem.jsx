@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { CameraControls, Stars, useTexture } from '@react-three/drei'
+import { CameraControls, Stars } from '@react-three/drei'
 import * as THREE from 'three'
 
 const TAU = Math.PI * 2
@@ -9,9 +9,9 @@ const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0)
 const AU_KM = 149_597_870.7
 const SOLAR_MU_KM3_S2 = 132_712_440_018
 const VISUAL_AU = 20
-const BASE_DAYS_PER_SECOND = 1
+const ORBIT_DAYS_PER_SECOND = 1
+const EARTH_VISUAL_SPIN_SECONDS = 36
 const TELEMETRY_INTERVAL_SECONDS = 0.12
-const BACKDROP_URL = `${import.meta.env.BASE_URL}assets/deep-space-4k.jpg`
 
 const degrees = (value) => THREE.MathUtils.degToRad(value)
 
@@ -21,7 +21,7 @@ const PLANETS = [
     semiMajorAxisAU: 0.387098, eccentricity: 0.20563, periodDays: 87.969,
     inclinationDeg: 7.005, ascendingNodeDeg: 48.331, argumentPeriapsisDeg: 29.124,
     meanAnomalyJ2000Deg: 174.796, axialTiltDeg: 0.034, rotationPeriodDays: 58.646,
-    visualRadius: 0.34, surfaceType: 0, seed: 1.31,
+    visualRadius: 0.34, surfaceType: 0, seed: 1.31, relief: 0.038,
     colors: ['#242321', '#77736c', '#c5beb2'],
   },
   {
@@ -37,7 +37,7 @@ const PLANETS = [
     semiMajorAxisAU: 1, eccentricity: 0.0167086, periodDays: 365.256,
     inclinationDeg: 0.00005, ascendingNodeDeg: -11.26064, argumentPeriapsisDeg: 114.20783,
     meanAnomalyJ2000Deg: 357.51716, axialTiltDeg: 23.4393, rotationPeriodDays: 0.9972697,
-    visualRadius: 0.66, surfaceType: 1, seed: 3.73,
+    visualRadius: 0.66, surfaceType: 1, seed: 3.73, relief: 0.006, shape: [1, 0.9966, 1],
     colors: ['#011944', '#0876b9', '#69a84f'], atmosphere: '#4ba9ff',
   },
   {
@@ -45,7 +45,7 @@ const PLANETS = [
     semiMajorAxisAU: 1.523679, eccentricity: 0.0934, periodDays: 686.98,
     inclinationDeg: 1.85, ascendingNodeDeg: 49.558, argumentPeriapsisDeg: 286.502,
     meanAnomalyJ2000Deg: 19.373, axialTiltDeg: 25.19, rotationPeriodDays: 1.025957,
-    visualRadius: 0.46, surfaceType: 0, seed: 4.49,
+    visualRadius: 0.46, surfaceType: 0, seed: 4.49, relief: 0.03,
     colors: ['#35130d', '#9a3f25', '#e58a53'], atmosphere: '#b84f31',
   },
   {
@@ -53,7 +53,7 @@ const PLANETS = [
     semiMajorAxisAU: 5.2044, eccentricity: 0.0489, periodDays: 4332.59,
     inclinationDeg: 1.303, ascendingNodeDeg: 100.464, argumentPeriapsisDeg: 273.867,
     meanAnomalyJ2000Deg: 20.02, axialTiltDeg: 3.13, rotationPeriodDays: 0.41354,
-    visualRadius: 2.3, surfaceType: 2, seed: 5.91,
+    visualRadius: 2.3, surfaceType: 2, seed: 5.91, shape: [1.068, 0.932, 1.068],
     colors: ['#5b3225', '#d5a777', '#f2dcc0'],
   },
   {
@@ -61,7 +61,7 @@ const PLANETS = [
     semiMajorAxisAU: 9.5826, eccentricity: 0.0565, periodDays: 10759.22,
     inclinationDeg: 2.485, ascendingNodeDeg: 113.665, argumentPeriapsisDeg: 339.392,
     meanAnomalyJ2000Deg: 316.888, axialTiltDeg: 26.73, rotationPeriodDays: 0.444,
-    visualRadius: 2, surfaceType: 3, seed: 6.67,
+    visualRadius: 2, surfaceType: 3, seed: 6.67, shape: [1.098, 0.902, 1.098],
     colors: ['#766044', '#d8bc83', '#fff0c2'],
     rings: { inner: 2.45, outer: 4.2, color: '#e7c98e', opacity: 0.78 },
   },
@@ -70,7 +70,7 @@ const PLANETS = [
     semiMajorAxisAU: 19.2184, eccentricity: 0.046381, periodDays: 30688.5,
     inclinationDeg: 0.773, ascendingNodeDeg: 74.006, argumentPeriapsisDeg: 96.998,
     meanAnomalyJ2000Deg: 142.2386, axialTiltDeg: 97.77, rotationPeriodDays: -0.71833,
-    visualRadius: 1.25, surfaceType: 4, seed: 7.23,
+    visualRadius: 1.25, surfaceType: 4, seed: 7.23, shape: [1.023, 0.977, 1.023],
     colors: ['#245b65', '#79d4dc', '#d3ffff'], atmosphere: '#79e8f0',
     rings: { inner: 1.55, outer: 2.18, color: '#9fdde1', opacity: 0.3 },
   },
@@ -79,7 +79,7 @@ const PLANETS = [
     semiMajorAxisAU: 30.11, eccentricity: 0.009456, periodDays: 60182,
     inclinationDeg: 1.77, ascendingNodeDeg: 131.784, argumentPeriapsisDeg: 273.187,
     meanAnomalyJ2000Deg: 259.908, axialTiltDeg: 28.32, rotationPeriodDays: 0.67125,
-    visualRadius: 1.2, surfaceType: 4, seed: 8.11,
+    visualRadius: 1.2, surfaceType: 4, seed: 8.11, shape: [1.017, 0.983, 1.017],
     colors: ['#071e65', '#174fc4', '#69a6ff'], atmosphere: '#3979ff',
   },
   {
@@ -87,7 +87,7 @@ const PLANETS = [
     semiMajorAxisAU: 2.7675, eccentricity: 0.0758, periodDays: 1680.5,
     inclinationDeg: 10.593, ascendingNodeDeg: 80.305, argumentPeriapsisDeg: 73.597,
     meanAnomalyJ2000Deg: 77.37, axialTiltDeg: 4, rotationPeriodDays: 0.3781,
-    visualRadius: 0.25, surfaceType: 5, seed: 9.37,
+    visualRadius: 0.25, surfaceType: 5, seed: 9.37, relief: 0.065, shape: [1.06, 0.95, 1.01],
     colors: ['#292725', '#716d67', '#d0c9bc'],
   },
   {
@@ -95,7 +95,7 @@ const PLANETS = [
     semiMajorAxisAU: 39.482, eccentricity: 0.2488, periodDays: 90560,
     inclinationDeg: 17.16, ascendingNodeDeg: 110.299, argumentPeriapsisDeg: 113.834,
     meanAnomalyJ2000Deg: 14.53, axialTiltDeg: 119.59, rotationPeriodDays: -6.387,
-    visualRadius: 0.3, surfaceType: 5, seed: 10.41,
+    visualRadius: 0.3, surfaceType: 5, seed: 10.41, relief: 0.045, shape: [1.035, 0.97, 1.0],
     colors: ['#3b2c25', '#a77c5d', '#f1dac0'],
   },
   {
@@ -103,7 +103,7 @@ const PLANETS = [
     semiMajorAxisAU: 43.218, eccentricity: 0.191, periodDays: 103774,
     inclinationDeg: 28.2, ascendingNodeDeg: 121.9, argumentPeriapsisDeg: 240.6,
     meanAnomalyJ2000Deg: 209.1, axialTiltDeg: 126, rotationPeriodDays: 0.1631,
-    visualRadius: 0.27, surfaceType: 5, seed: 11.83, shape: [1.55, 0.82, 0.9],
+    visualRadius: 0.27, surfaceType: 5, seed: 11.83, relief: 0.052, shape: [1.55, 1.14, 0.75],
     colors: ['#77736e', '#d8d4cb', '#ffffff'],
   },
   {
@@ -111,7 +111,7 @@ const PLANETS = [
     semiMajorAxisAU: 45.715, eccentricity: 0.159, periodDays: 111845,
     inclinationDeg: 29.0, ascendingNodeDeg: 79.62, argumentPeriapsisDeg: 294.8,
     meanAnomalyJ2000Deg: 165.5, axialTiltDeg: 29, rotationPeriodDays: 0.951,
-    visualRadius: 0.28, surfaceType: 5, seed: 12.57,
+    visualRadius: 0.28, surfaceType: 5, seed: 12.57, relief: 0.044, shape: [1.04, 0.96, 1.0],
     colors: ['#3d2118', '#9e5336', '#e4b184'],
   },
   {
@@ -119,7 +119,7 @@ const PLANETS = [
     semiMajorAxisAU: 67.781, eccentricity: 0.44, periodDays: 203830,
     inclinationDeg: 44.04, ascendingNodeDeg: 35.95, argumentPeriapsisDeg: 151.6,
     meanAnomalyJ2000Deg: 204.2, axialTiltDeg: 78, rotationPeriodDays: 15.79,
-    visualRadius: 0.3, surfaceType: 5, seed: 13.19,
+    visualRadius: 0.3, surfaceType: 5, seed: 13.19, relief: 0.035, shape: [1.025, 0.98, 1.0],
     colors: ['#64615d', '#bbb8ae', '#fffdf2'],
   },
 ]
@@ -193,14 +193,63 @@ function orbitalSpeedKms(body, radiusAU) {
   return Math.sqrt(SOLAR_MU_KM3_S2 * (2 / radiusKm - 1 / semiMajorKm))
 }
 
+function visualSpinRadiansPerSecond(body, timeScale) {
+  if (timeScale === 0) return 0
+
+  const rotationDirection = Math.sign(body.rotationPeriodDays) || 1
+  const physicalRelativeSpeed = 0.9972697 / Math.abs(body.rotationPeriodDays)
+  const stabilizedRelativeSpeed = THREE.MathUtils.clamp(physicalRelativeSpeed, 0.4, 2.5)
+  const acceleratedTime = Math.pow(timeScale, 0.32)
+
+  return rotationDirection * (TAU / EARTH_VISUAL_SPIN_SECONDS) * stabilizedRelativeSpeed * acceleratedTime
+}
+
 const planetVertexShader = `
+  uniform float uSurfaceType;
+  uniform float uSeed;
+  uniform float uRelief;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
   varying vec3 vLocalPosition;
+
+  float vertexHash(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 31.32);
+    return fract((p.x + p.y) * p.z);
+  }
+
+  float vertexNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(vertexHash(i), vertexHash(i + vec3(1,0,0)), f.x), mix(vertexHash(i + vec3(0,1,0)), vertexHash(i + vec3(1,1,0)), f.x), f.y),
+      mix(mix(vertexHash(i + vec3(0,0,1)), vertexHash(i + vec3(1,0,1)), f.x), mix(vertexHash(i + vec3(0,1,1)), vertexHash(i + vec3(1,1,1)), f.x), f.y), f.z
+    );
+  }
+
+  float vertexFbm(vec3 p) {
+    float value = 0.0;
+    float amplitude = 0.56;
+    for (int octave = 0; octave < 4; octave++) {
+      value += amplitude * vertexNoise(p);
+      p = p * 2.06 + 7.31;
+      amplitude *= 0.48;
+    }
+    return value;
+  }
+
   void main() {
-    vLocalPosition = normalize(position);
+    vec3 direction = normalize(position);
+    vec3 samplePosition = direction * 3.4 + vec3(uSeed * 1.71, uSeed * 0.63, uSeed * 2.13);
+    float broadRelief = vertexFbm(samplePosition) - 0.5;
+    float fineRelief = vertexNoise(samplePosition * 5.1) - 0.5;
+    float displacement = (broadRelief * 1.35 + fineRelief * 0.24) * uRelief;
+    vec3 displacedPosition = position * (1.0 + displacement);
+
+    vLocalPosition = direction;
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
-    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vec4 worldPosition = modelMatrix * vec4(displacedPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
     gl_Position = projectionMatrix * viewMatrix * worldPosition;
   }
@@ -214,6 +263,7 @@ const planetFragmentShader = `
   uniform float uSurfaceType;
   uniform float uSeed;
   uniform float uTime;
+  uniform float uRelief;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
   varying vec3 vLocalPosition;
@@ -304,7 +354,10 @@ const planetFragmentShader = `
     return mix(mix(uColorA,uColorB,cloudBands),uColorC,smoothstep(0.58,0.94,swirl)*0.72);
   }
   void main() {
-    vec3 normal = normalize(vWorldNormal);
+    vec3 derivativeNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    if (dot(derivativeNormal, vWorldNormal) < 0.0) derivativeNormal *= -1.0;
+    float reliefNormalStrength = clamp(uRelief * 11.0, 0.0, 0.68);
+    vec3 normal = normalize(mix(vWorldNormal, derivativeNormal, reliefNormalStrength));
     vec3 lightDirection = normalize(-vWorldPosition);
     vec3 viewDirection = normalize(cameraPosition-vWorldPosition);
     float diffuse = max(dot(normal,lightDirection),0.0);
@@ -318,29 +371,6 @@ const planetFragmentShader = `
     gl_FragColor = vec4(color,1.0);
   }
 `
-
-function SpaceBackdrop() {
-  const [texture] = useTexture([BACKDROP_URL])
-  const geometryRef = useRef(null)
-  const materialRef = useRef(null)
-  useEffect(() => {
-    texture.colorSpace = THREE.SRGBColorSpace
-    texture.anisotropy = 2
-    texture.needsUpdate = true
-    return () => {
-      texture.dispose()
-      useTexture.clear(BACKDROP_URL)
-      geometryRef.current?.dispose()
-      materialRef.current?.dispose()
-    }
-  }, [texture])
-  return (
-    <mesh scale={1850} renderOrder={-10}>
-      <sphereGeometry ref={geometryRef} args={[1, 48, 32]} />
-      <meshBasicMaterial ref={materialRef} map={texture} side={THREE.BackSide} color="#7893b7" toneMapped={false} depthWrite={false} />
-    </mesh>
-  )
-}
 
 function OrbitPath({ body }) {
   const geometry = useMemo(() => {
@@ -425,6 +455,7 @@ function Planet({ body, simulatedTimeRef, timeScaleRef, registerBody, setSelecte
     uSurfaceType: { value: body.surfaceType },
     uSeed: { value: body.seed },
     uTime: { value: 0 },
+    uRelief: { value: body.relief ?? 0 },
   }), [body])
   useLayoutEffect(() => registerBody(body.name, orbitRef.current), [body.name, registerBody])
   useEffect(() => () => {
@@ -436,15 +467,16 @@ function Planet({ body, simulatedTimeRef, timeScaleRef, registerBody, setSelecte
     if (!orbitRef.current || !rotationRef.current) return
     orbitalPosition(body, simulatedTimeRef.current, position)
     orbitRef.current.position.copy(position)
-    const simulatedDays = Math.min(delta, 0.05) * BASE_DAYS_PER_SECOND * timeScaleRef.current
-    rotationRef.current.rotation.y = wrapRadians(rotationRef.current.rotation.y + (simulatedDays / body.rotationPeriodDays) * TAU)
+    const safeDelta = Math.min(delta, 0.05)
+    const spinVelocity = visualSpinRadiansPerSecond(body, timeScaleRef.current)
+    rotationRef.current.rotation.y = wrapRadians(rotationRef.current.rotation.y + safeDelta * spinVelocity)
     if (materialRef.current) materialRef.current.uniforms.uTime.value = state.clock.elapsedTime
   }, -2)
   return (
     <group ref={orbitRef}>
       <group rotation-z={degrees(body.axialTiltDeg)} scale={body.shape ?? [1, 1, 1]} onClick={(event) => { event.stopPropagation(); setSelected(body.name) }}>
         <mesh ref={rotationRef} castShadow>
-          <sphereGeometry ref={geometryRef} args={[body.visualRadius, body.classification === 'Planeta enano' ? 48 : 72, body.classification === 'Planeta enano' ? 32 : 56]} />
+          <sphereGeometry ref={geometryRef} args={[body.visualRadius, body.classification === 'Planeta enano' ? 64 : 96, body.classification === 'Planeta enano' ? 48 : 72]} />
           <shaderMaterial ref={materialRef} uniforms={uniforms} vertexShader={planetVertexShader} fragmentShader={planetFragmentShader} />
         </mesh>
         {body.atmosphere && <Atmosphere radius={body.visualRadius} color={body.atmosphere} />}
@@ -531,7 +563,7 @@ function SimulationEngine({ simulatedTimeRef, timeScaleRef, useSolarStore }) {
   useEffect(() => { timeScaleRef.current = timeScale }, [timeScale, timeScaleRef])
   useFrame((_, delta) => {
     const stableDelta = Math.min(delta, 0.05)
-    simulatedTimeRef.current += stableDelta * BASE_DAYS_PER_SECOND * timeScaleRef.current * DAY_MS
+    simulatedTimeRef.current += stableDelta * ORBIT_DAYS_PER_SECOND * timeScaleRef.current * DAY_MS
     telemetryAccumulator.current += stableDelta
     if (telemetryAccumulator.current < TELEMETRY_INTERVAL_SECONDS) return
     telemetryAccumulator.current = 0
@@ -560,8 +592,7 @@ export default function SolarSystem({ useSolarStore }) {
   useEffect(() => () => bodyRefs.current.clear(), [])
   return (
     <>
-      <SpaceBackdrop />
-      <Stars radius={1250} depth={920} count={7600} factor={4.7} saturation={0.4} fade speed={0.08} />
+      <Stars radius={1250} depth={920} count={4200} factor={2.15} saturation={0.35} fade speed={0.05} />
       <ambientLight intensity={0.004} color="#4b5f88" />
       <SimulationEngine simulatedTimeRef={simulatedTimeRef} timeScaleRef={timeScaleRef} useSolarStore={useSolarStore} />
       <Sun registerBody={registerBody} setSelected={setSelected} />

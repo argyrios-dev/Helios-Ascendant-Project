@@ -217,7 +217,7 @@ function Interface() {
             </button>
           ))}
         </div>
-        <span className="time-unit">base: 1 día terrestre / segundo</span>
+        <span className="time-unit">órbitas: 1 día/s · rotación visual estabilizada</span>
       </section>
 
       <div className="interaction-hint">
@@ -243,7 +243,7 @@ export default function App() {
             camera={{ position: [0, 38, 76], fov: 46, near: 0.05, far: 4200 }}
             gl={{
               antialias: false,
-              alpha: false,
+              alpha: true,
               depth: true,
               stencil: false,
               powerPreference: 'high-performance',
@@ -256,7 +256,6 @@ export default function App() {
               gl.shadowMap.type = THREE.PCFSoftShadowMap
             }}
           >
-            <color attach="background" args={['#010207']} />
             <Suspense fallback={null}>
               <SolarSystem useSolarStore={useSolarStore} />
             </Suspense>
