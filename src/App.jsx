@@ -1,6 +1,5 @@
 import { Component, Suspense, useMemo, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { AdaptiveDpr } from '@react-three/drei'
 import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing'
 import { create } from 'zustand'
 import * as THREE from 'three'
@@ -90,9 +89,9 @@ function SceneEffects() {
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <Bloom
         mipmapBlur
-        intensity={1.55}
-        luminanceThreshold={1.1}
-        luminanceSmoothing={0.18}
+        intensity={1.2}
+        luminanceThreshold={1.45}
+        luminanceSmoothing={0.12}
       />
       <Vignette eskil={false} offset={0.18} darkness={0.66} />
     </EffectComposer>
@@ -124,6 +123,7 @@ function formatSimulationDate(isoDate) {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     timeZone: 'UTC',
     hour12: false,
   }).format(date)
@@ -278,7 +278,7 @@ function Interface() {
             </button>
           ))}
         </div>
-        <span className="time-unit">órbitas: 1 día/s · rotación visual estabilizada</span>
+        <span className="time-unit">1× = tiempo físico real · 10× y 100× son multiplicadores exactos</span>
       </section>
 
       <div className="interaction-hint">
@@ -292,19 +292,20 @@ function Interface() {
 
 export default function App() {
   const [webGLAvailable] = useState(supportsWebGL2)
+  const [pixelRatio] = useState(() => Math.min(window.devicePixelRatio || 1, 1.5))
 
   return (
     <main className="app-shell" style={{ '--space-bg': `url(${LOCAL_BACKDROP_URL})` }}>
       <SceneErrorBoundary>
         {webGLAvailable ? (
           <Canvas
-            dpr={[1, 2]}
+            dpr={pixelRatio}
             frameloop="always"
             shadows
             camera={{ position: [0, 38, 76], fov: 46, near: 0.05, far: 4200 }}
             gl={{
               antialias: false,
-              alpha: true,
+              alpha: false,
               depth: true,
               stencil: false,
               powerPreference: 'high-performance',
@@ -320,7 +321,6 @@ export default function App() {
             <Suspense fallback={null}>
               <SolarSystem useSolarStore={useSolarStore} />
             </Suspense>
-            <AdaptiveDpr pixelated />
             <PerformanceProbe />
             <SceneEffects />
           </Canvas>
