@@ -11,6 +11,7 @@ export const useSolarStore = create((set) => ({
   timeScale: 1,
   fps: 0,
   telemetry: {
+    mode: 'orbit',
     distanceAU: 1,
     velocityKms: 29.78,
     simulatedDate: new Date().toISOString(),
@@ -23,6 +24,11 @@ export const useSolarStore = create((set) => ({
 
 const TIME_SCALES = [0, 1, 10, 100]
 const LOCAL_BACKDROP_URL = `${import.meta.env.BASE_URL}assets/deep-space-4k.jpg`
+const ICON_URL = `${import.meta.env.BASE_URL}assets/helios-icon-512.png`
+const BODY_GROUPS = ['Sistema Solar', 'Espacio profundo', 'Observatorios'].map((category) => ({
+  category,
+  bodies: BODY_CATALOG.filter((body) => body.category === category),
+}))
 
 function supportsWebGL2() {
   try {
@@ -102,6 +108,12 @@ function formatNumber(value, maximumFractionDigits = 3) {
   }).format(value)
 }
 
+function formatMagnitude(value, maximumFractionDigits = 2) {
+  if (!Number.isFinite(value)) return '—'
+  if (Math.abs(value) >= 100_000_000) return value.toExponential(maximumFractionDigits).replace('.', ',')
+  return new Intl.NumberFormat('es-ES', { maximumFractionDigits }).format(value)
+}
+
 function formatSimulationDate(isoDate) {
   const date = new Date(isoDate)
   if (Number.isNaN(date.getTime())) return '—'
@@ -130,6 +142,7 @@ function Interface() {
     <div className="interface" aria-label="Controles y telemetría del simulador">
       <header className="topbar">
         <div className="brand-block">
+          <img className="brand-icon" src={ICON_URL} alt="" aria-hidden="true" />
           <span className="eyebrow">DEEP SPACE / WEBGL-01</span>
           <h1>HELIOS ASCENDANT</h1>
           <span className="edition">PROJECT</span>
@@ -145,18 +158,26 @@ function Interface() {
       <nav className="body-selector glass-panel" aria-label="Seleccionar cuerpo celeste">
         <span className="panel-kicker">01 / OBJETIVO · {BODY_CATALOG.length} CUERPOS</span>
         <div className="body-list">
-          {BODY_CATALOG.map((body, index) => (
-            <button
-              className={body.name === selected ? 'body-button is-active' : 'body-button'}
-              key={body.name}
-              type="button"
-              aria-pressed={body.name === selected}
-              onClick={() => setSelected(body.name)}
-            >
-              <span className="body-index">{String(index).padStart(2, '0')}</span>
-              <span className="body-dot" style={{ '--body-color': body.color }} aria-hidden="true" />
-              <span>{body.name}</span>
-            </button>
+          {BODY_GROUPS.map((group) => (
+            <div className="body-group" key={group.category}>
+              <span className="body-group-title">{group.category}</span>
+              {group.bodies.map((body) => {
+                const index = BODY_CATALOG.findIndex((catalogBody) => catalogBody.name === body.name)
+                return (
+                  <button
+                    className={body.name === selected ? 'body-button is-active' : 'body-button'}
+                    key={body.name}
+                    type="button"
+                    aria-pressed={body.name === selected}
+                    onClick={() => setSelected(body.name)}
+                  >
+                    <span className="body-index">{String(index).padStart(2, '0')}</span>
+                    <span className="body-dot" style={{ '--body-color': body.color }} aria-hidden="true" />
+                    <span>{body.name}</span>
+                  </button>
+                )
+              })}
+            </div>
           ))}
         </div>
       </nav>
@@ -172,31 +193,71 @@ function Interface() {
           </div>
         </div>
 
-        <dl className="telemetry-grid">
-          <div>
-            <dt>Distancia solar</dt>
-            <dd>{selected === 'Sol' ? '—' : formatNumber(telemetry.distanceAU, 3)} <small>UA</small></dd>
-          </div>
-          <div>
-            <dt>Velocidad orbital</dt>
-            <dd>{selected === 'Sol' ? '—' : formatNumber(telemetry.velocityKms, 2)} <small>km/s</small></dd>
-          </div>
-          <div>
-            <dt>Semieje mayor</dt>
-            <dd>{activeBody?.semiMajorAxisAU ? formatNumber(activeBody.semiMajorAxisAU, 3) : '—'} <small>UA</small></dd>
-          </div>
-          <div>
-            <dt>Excentricidad</dt>
-            <dd>{activeBody?.eccentricity !== undefined ? formatNumber(activeBody.eccentricity, 4) : '—'}</dd>
-          </div>
-        </dl>
+        {activeBody?.category === 'Espacio profundo' ? (
+          <dl className="telemetry-grid">
+            <div>
+              <dt>Distancia terrestre</dt>
+              <dd>{formatMagnitude(telemetry.distanceLightYears, 2)} <small>años luz</small></dd>
+            </div>
+            <div>
+              <dt>Masa estimada</dt>
+              <dd>{formatMagnitude(telemetry.massSolar, 3)} <small>M☉</small></dd>
+            </div>
+            <div>
+              <dt>Radio Schwarzschild</dt>
+              <dd>{formatMagnitude(telemetry.schwarzschildRadiusKm, 2)} <small>km</small></dd>
+            </div>
+            <div>
+              <dt>Plasma del disco</dt>
+              <dd>{formatMagnitude(telemetry.diskTemperatureK, 1)} <small>K</small></dd>
+            </div>
+          </dl>
+        ) : activeBody?.category === 'Observatorios' ? (
+          <dl className="telemetry-grid">
+            <div>
+              <dt>Distancia solar</dt>
+              <dd>{formatNumber(telemetry.distanceAU, 3)} <small>UA</small></dd>
+            </div>
+            <div>
+              <dt>Velocidad heliocéntrica</dt>
+              <dd>{formatNumber(telemetry.velocityKms, 2)} <small>km/s</small></dd>
+            </div>
+            <div>
+              <dt>Altitud / punto</dt>
+              <dd>{formatMagnitude(telemetry.altitudeKm, 1)} <small>km</small></dd>
+            </div>
+            <div>
+              <dt>Lanzamiento</dt>
+              <dd>{telemetry.launchYear ?? '—'}</dd>
+            </div>
+          </dl>
+        ) : (
+          <dl className="telemetry-grid">
+            <div>
+              <dt>Distancia solar</dt>
+              <dd>{selected === 'Sol' ? '—' : formatNumber(telemetry.distanceAU, 3)} <small>UA</small></dd>
+            </div>
+            <div>
+              <dt>Velocidad orbital</dt>
+              <dd>{selected === 'Sol' ? '—' : formatNumber(telemetry.velocityKms, 2)} <small>km/s</small></dd>
+            </div>
+            <div>
+              <dt>Semieje mayor</dt>
+              <dd>{activeBody?.semiMajorAxisAU ? formatNumber(activeBody.semiMajorAxisAU, 3) : '—'} <small>UA</small></dd>
+            </div>
+            <div>
+              <dt>Excentricidad</dt>
+              <dd>{activeBody?.eccentricity !== undefined ? formatNumber(activeBody.eccentricity, 4) : '—'}</dd>
+            </div>
+          </dl>
+        )}
 
         <div className="epoch-readout">
           <span>ÉPOCA DINÁMICA / UTC</span>
           <time dateTime={telemetry.simulatedDate}>{formatSimulationDate(telemetry.simulatedDate)}</time>
         </div>
 
-        <p className="scale-warning">Radios visuales ampliados; efemérides y telemetría en unidades físicas.</p>
+        <p className="scale-warning">Escalas visuales adaptadas; datos físicos y clasificación científica.</p>
       </aside>
 
       <section className="time-console glass-panel" aria-label="Velocidad de simulación">
@@ -221,7 +282,7 @@ function Interface() {
       </section>
 
       <div className="interaction-hint">
-        <span>ARRASTRAR</span> orbitar · <span>RUEDA</span> zoom · <span>CLIC</span> fijar planeta
+        <span>ARRASTRAR</span> orbitar · <span>RUEDA</span> zoom · <span>CLIC</span> fijar objeto
       </div>
 
       <span className="local-assets">SHADERS PROCEDURALES · FONDO 4K LOCAL</span>

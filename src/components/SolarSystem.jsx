@@ -124,9 +124,87 @@ const PLANETS = [
   },
 ]
 
+const BLACK_HOLES = [
+  {
+    name: 'Sagittarius A*',
+    classification: 'Agujero negro supermasivo',
+    category: 'Espacio profundo',
+    color: '#ff8a35',
+    visualRadius: 3.2,
+    displayPosition: [0, 360, -980],
+    massSolar: 4_154_000,
+    distanceLightYears: 26_673,
+    schwarzschildRadiusKm: 12_270_000,
+    diskColor: '#ff7a1a',
+    diskTemperatureK: 10_000_000,
+    seed: 21.7,
+  },
+  {
+    name: 'M87*',
+    classification: 'Agujero negro supermasivo',
+    category: 'Espacio profundo',
+    color: '#ffb05a',
+    visualRadius: 4.6,
+    displayPosition: [1120, -180, -1480],
+    massSolar: 6_500_000_000,
+    distanceLightYears: 53_500_000,
+    schwarzschildRadiusKm: 19_200_000_000,
+    diskColor: '#ffad42',
+    diskTemperatureK: 6_000_000,
+    seed: 29.4,
+  },
+]
+
+const OBSERVATORIES = [
+  {
+    name: 'Hubble',
+    classification: 'Telescopio espacial',
+    category: 'Observatorios',
+    color: '#b7d8ef',
+    visualRadius: 0.72,
+    model: 'hubble',
+    host: 'Tierra',
+    altitudeKm: 540,
+    orbitPeriodMinutes: 95.4,
+    launchYear: 1990,
+    displayOffset: 2.2,
+    phase: 0.3,
+  },
+  {
+    name: 'James Webb',
+    classification: 'Observatorio infrarrojo',
+    category: 'Observatorios',
+    color: '#e6b95d',
+    visualRadius: 1.05,
+    model: 'webb',
+    host: 'Tierra',
+    altitudeKm: 1_500_000,
+    orbitPeriodMinutes: 180 * 24 * 60,
+    launchYear: 2021,
+    displayOffset: 4.6,
+    phase: 2.1,
+  },
+  {
+    name: 'Euclid',
+    classification: 'Observatorio cosmológico',
+    category: 'Observatorios',
+    color: '#dce7ed',
+    visualRadius: 0.82,
+    model: 'euclid',
+    host: 'Tierra',
+    altitudeKm: 1_500_000,
+    orbitPeriodMinutes: 180 * 24 * 60,
+    launchYear: 2023,
+    displayOffset: 6.4,
+    phase: 4.4,
+  },
+]
+
 export const BODY_CATALOG = [
-  { name: 'Sol', classification: 'Estrella G2V', color: '#ffb347', visualRadius: 4.5 },
-  ...PLANETS,
+  { name: 'Sol', classification: 'Estrella G2V', category: 'Sistema Solar', color: '#ffb347', visualRadius: 4.5 },
+  ...PLANETS.map((body) => ({ ...body, category: 'Sistema Solar' })),
+  ...BLACK_HOLES,
+  ...OBSERVATORIES,
 ]
 
 const BODY_BY_NAME = Object.fromEntries(BODY_CATALOG.map((body) => [body.name, body]))
@@ -486,6 +564,292 @@ function Planet({ body, simulatedTimeRef, timeScaleRef, registerBody, setSelecte
   )
 }
 
+const blackHoleDiskVertexShader = `
+  varying vec2 vLocal;
+  varying vec3 vWorldPosition;
+  void main() {
+    vLocal = position.xy;
+    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = worldPosition.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`
+
+const blackHoleDiskFragmentShader = `
+  precision highp float;
+  uniform float uTime;
+  uniform float uInner;
+  uniform float uOuter;
+  uniform float uSeed;
+  uniform vec3 uDiskColor;
+  varying vec2 vLocal;
+  varying vec3 vWorldPosition;
+
+  float hash21(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+
+  float noise2(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1,0)), f.x), mix(hash21(i + vec2(0,1)), hash21(i + vec2(1,1)), f.x), f.y);
+  }
+
+  void main() {
+    float radius = length(vLocal);
+    float normalizedRadius = (radius - uInner) / max(uOuter - uInner, 0.001);
+    float angle = atan(vLocal.y, vLocal.x);
+    float spiral = noise2(vec2(angle * 8.0 - uTime * 1.4, normalizedRadius * 34.0 + uSeed));
+    float filaments = 0.52 + 0.48 * sin(angle * 31.0 - normalizedRadius * 86.0 - uTime * 3.1 + spiral * 5.0);
+    float innerHeat = pow(1.0 - clamp(normalizedRadius, 0.0, 1.0), 2.25);
+    float edge = smoothstep(0.0, 0.055, normalizedRadius) * (1.0 - smoothstep(0.82, 1.0, normalizedRadius));
+    float doppler = 0.56 + 0.44 * clamp(0.5 + 0.5 * cos(angle - 0.45), 0.0, 1.0);
+    float density = edge * (0.22 + spiral * 0.55 + filaments * 0.28) * doppler;
+    vec3 cold = uDiskColor * vec3(1.0, 0.19, 0.025);
+    vec3 hot = vec3(1.0, 0.94, 0.68);
+    vec3 color = mix(cold, hot, innerHeat * 0.9 + filaments * 0.12);
+    gl_FragColor = vec4(color * (1.4 + innerHeat * 4.6), density);
+  }
+`
+
+function BlackHole({ body, registerBody, setSelected }) {
+  const rootRef = useRef(null)
+  const diskRef = useRef(null)
+  const photonRingRef = useRef(null)
+  const resourcesRef = useRef(null)
+  const innerRadius = body.visualRadius * 1.45
+  const outerRadius = body.visualRadius * 5.2
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uInner: { value: innerRadius },
+    uOuter: { value: outerRadius },
+    uSeed: { value: body.seed },
+    uDiskColor: { value: new THREE.Color(body.diskColor) },
+  }), [body, innerRadius, outerRadius])
+
+  useLayoutEffect(() => registerBody(body.name, rootRef.current), [body.name, registerBody])
+  useFrame((state, delta) => {
+    if (diskRef.current) {
+      diskRef.current.rotation.z += Math.min(delta, 0.05) * 0.075
+      diskRef.current.material.uniforms.uTime.value = state.clock.elapsedTime
+    }
+    if (photonRingRef.current) photonRingRef.current.rotation.z -= Math.min(delta, 0.05) * 0.11
+  })
+
+  useEffect(() => () => {
+    registerBody(body.name, null)
+    resourcesRef.current?.traverse((object) => {
+      object.geometry?.dispose()
+      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose())
+      else object.material?.dispose()
+    })
+  }, [body.name, registerBody])
+
+  return (
+    <group
+      ref={(node) => { rootRef.current = node; resourcesRef.current = node }}
+      position={body.displayPosition}
+      rotation={[0.36, -0.24, 0.22]}
+      onClick={(event) => { event.stopPropagation(); setSelected(body.name) }}
+    >
+      <mesh renderOrder={8}>
+        <sphereGeometry args={[body.visualRadius, 96, 72]} />
+        <meshBasicMaterial color="#000000" toneMapped={false} />
+      </mesh>
+
+      <mesh ref={photonRingRef} renderOrder={9}>
+        <torusGeometry args={[body.visualRadius * 1.13, body.visualRadius * 0.075, 24, 192]} />
+        <meshBasicMaterial color="#fff2c2" toneMapped={false} />
+      </mesh>
+
+      <mesh ref={diskRef} renderOrder={7}>
+        <ringGeometry args={[innerRadius, outerRadius, 384, 1]} />
+        <shaderMaterial
+          uniforms={uniforms}
+          vertexShader={blackHoleDiskVertexShader}
+          fragmentShader={blackHoleDiskFragmentShader}
+          transparent
+          depthWrite={false}
+          side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      <mesh scale={body.visualRadius * 1.9} renderOrder={6}>
+        <sphereGeometry args={[1, 64, 48]} />
+        <shaderMaterial
+          vertexShader={`varying vec3 vN;varying vec3 vV;void main(){vec4 p=modelViewMatrix*vec4(position,1.0);vN=normalize(normalMatrix*normal);vV=normalize(-p.xyz);gl_Position=projectionMatrix*p;}`}
+          fragmentShader={`varying vec3 vN;varying vec3 vV;void main(){float f=pow(1.0-max(dot(vN,vV),0.0),4.5);gl_FragColor=vec4(vec3(1.0,.25,.025)*f*2.4,f*.42);}`}
+          transparent
+          depthWrite={false}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+
+      {body.name === 'M87*' && (
+        <>
+          <mesh position-y={body.visualRadius * 8.5}>
+            <coneGeometry args={[body.visualRadius * 0.55, body.visualRadius * 17, 32, 1, true]} />
+            <meshBasicMaterial color="#74bdff" transparent opacity={0.12} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </mesh>
+          <mesh position-y={-body.visualRadius * 8.5} rotation-z={Math.PI}>
+            <coneGeometry args={[body.visualRadius * 0.55, body.visualRadius * 17, 32, 1, true]} />
+            <meshBasicMaterial color="#74bdff" transparent opacity={0.08} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} toneMapped={false} />
+          </mesh>
+        </>
+      )}
+    </group>
+  )
+}
+
+function HexMirror({ x, y, scale = 1 }) {
+  return (
+    <mesh position={[x, y, 0]} scale={scale}>
+      <circleGeometry args={[0.195, 6]} />
+      <meshStandardMaterial color="#d9a929" metalness={0.92} roughness={0.18} emissive="#6f4005" emissiveIntensity={0.3} side={THREE.DoubleSide} />
+    </mesh>
+  )
+}
+
+function HubbleModel() {
+  return (
+    <group rotation={[0.1, -0.4, 0.2]}>
+      <mesh rotation-z={Math.PI / 2}>
+        <cylinderGeometry args={[0.3, 0.36, 1.55, 32]} />
+        <meshStandardMaterial color="#c7d3d9" metalness={0.83} roughness={0.24} />
+      </mesh>
+      <mesh position={[-0.85, 0, 0]} rotation-y={Math.PI / 2}>
+        <cylinderGeometry args={[0.38, 0.3, 0.22, 32]} />
+        <meshStandardMaterial color="#10151b" metalness={0.75} roughness={0.2} />
+      </mesh>
+      {[-1, 1].map((side) => (
+        <group key={side} position={[0, side * 0.92, 0]}>
+          <mesh>
+            <boxGeometry args={[1.7, 0.55, 0.035]} />
+            <meshStandardMaterial color="#132f62" metalness={0.32} roughness={0.34} emissive="#07142d" emissiveIntensity={0.8} />
+          </mesh>
+          {[0, 1, 2, 3].map((line) => (
+            <mesh key={line} position={[-0.64 + line * 0.43, 0, 0.022]}>
+              <boxGeometry args={[0.018, 0.53, 0.006]} />
+              <meshBasicMaterial color="#6c8bc5" />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </group>
+  )
+}
+
+function WebbModel() {
+  const rows = [3, 4, 5, 4, 3]
+  const mirrors = []
+  rows.forEach((count, row) => {
+    for (let index = 0; index < count; index += 1) {
+      mirrors.push({ x: (index - (count - 1) / 2) * 0.34, y: (2 - row) * 0.29 })
+    }
+  })
+  return (
+    <group rotation={[0.22, -0.48, 0]}>
+      <group position={[0, 0.32, 0.18]} rotation-x={-0.08}>
+        {mirrors.map((mirror, index) => <HexMirror key={index} x={mirror.x} y={mirror.y} />)}
+      </group>
+      {[0, 1, 2, 3, 4].map((layer) => (
+        <mesh key={layer} position={[0, -0.62 - layer * 0.018, 0.03]} rotation-x={Math.PI / 2} scale={[1 - layer * 0.045, 1 - layer * 0.045, 1]}>
+          <cylinderGeometry args={[1.25, 1.25, 0.012, 6]} />
+          <meshStandardMaterial color={layer % 2 ? '#d9bf83' : '#dfe8ec'} metalness={0.72} roughness={0.22} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      <mesh position={[0, -0.12, 0]}>
+        <cylinderGeometry args={[0.12, 0.12, 0.92, 16]} />
+        <meshStandardMaterial color="#9ba7ad" metalness={0.8} roughness={0.3} />
+      </mesh>
+    </group>
+  )
+}
+
+function EuclidModel() {
+  return (
+    <group rotation={[0.15, 0.55, -0.1]}>
+      <mesh rotation-z={Math.PI / 2}>
+        <cylinderGeometry args={[0.42, 0.55, 1.3, 32]} />
+        <meshStandardMaterial color="#dde7ea" metalness={0.68} roughness={0.28} />
+      </mesh>
+      <mesh position={[-0.72, 0, 0]} rotation-y={Math.PI / 2}>
+        <cylinderGeometry args={[0.46, 0.42, 0.18, 32]} />
+        <meshStandardMaterial color="#11181d" metalness={0.82} roughness={0.18} />
+      </mesh>
+      <mesh position={[0.55, -0.58, 0]} rotation-z={-0.28}>
+        <boxGeometry args={[1.35, 0.72, 0.045]} />
+        <meshStandardMaterial color="#163a72" metalness={0.3} roughness={0.3} emissive="#081a3e" emissiveIntensity={0.8} />
+      </mesh>
+      <mesh position={[0.68, 0, 0]} rotation-y={Math.PI / 2}>
+        <cylinderGeometry args={[0.68, 0.68, 0.05, 48]} />
+        <meshStandardMaterial color="#d7b957" metalness={0.84} roughness={0.22} />
+      </mesh>
+    </group>
+  )
+}
+
+function SpaceObservatory({ body, simulatedTimeRef, timeScaleRef, registerBody, setSelected }) {
+  const rootRef = useRef(null)
+  const modelRef = useRef(null)
+  const earthPosition = useMemo(() => new THREE.Vector3(), [])
+  const radial = useMemo(() => new THREE.Vector3(), [])
+  const localOffset = useMemo(() => new THREE.Vector3(), [])
+  const orbitPhase = useRef(body.phase)
+
+  useLayoutEffect(() => registerBody(body.name, rootRef.current), [body.name, registerBody])
+  useFrame((_, delta) => {
+    if (!rootRef.current || !modelRef.current) return
+    orbitalPosition(PLANETS[2], simulatedTimeRef.current, earthPosition)
+    const safeDelta = Math.min(delta, 0.05)
+    const timeBoost = timeScaleRef.current === 0 ? 0 : Math.pow(timeScaleRef.current, 0.22)
+    const visualPeriod = body.model === 'hubble' ? 24 : 72
+    orbitPhase.current = wrapRadians(orbitPhase.current + safeDelta * TAU * timeBoost / visualPeriod)
+    const angle = orbitPhase.current
+
+    if (body.model === 'hubble') {
+      localOffset.set(
+        Math.cos(angle) * body.displayOffset,
+        Math.sin(angle) * body.displayOffset * 0.46,
+        Math.sin(angle) * body.displayOffset,
+      )
+      rootRef.current.position.copy(earthPosition).add(localOffset)
+    } else {
+      radial.copy(earthPosition).normalize()
+      rootRef.current.position.copy(earthPosition).addScaledVector(radial, body.displayOffset)
+      rootRef.current.position.y += Math.sin(angle) * 0.75
+      rootRef.current.position.z += Math.cos(angle) * 0.75
+    }
+    modelRef.current.rotation.y += safeDelta * 0.075
+  }, -2)
+
+  useEffect(() => () => {
+    registerBody(body.name, null)
+    modelRef.current?.traverse((object) => {
+      object.geometry?.dispose()
+      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose())
+      else object.material?.dispose()
+    })
+  }, [body.name, registerBody])
+
+  return (
+    <group ref={rootRef} onClick={(event) => { event.stopPropagation(); setSelected(body.name) }}>
+      <group ref={modelRef} scale={body.visualRadius}>
+        {body.model === 'hubble' && <HubbleModel />}
+        {body.model === 'webb' && <WebbModel />}
+        {body.model === 'euclid' && <EuclidModel />}
+      </group>
+    </group>
+  )
+}
+
 function Sun({ registerBody, setSelected }) {
   const rootRef = useRef(null)
   const geometryRef = useRef(null)
@@ -545,7 +909,8 @@ function CameraTracker({ bodyRefs, useSolarStore }) {
     viewDirection.subVectors(cameraPosition, controlTarget)
     if (viewDirection.lengthSq() < 0.0001) viewDirection.set(1, 0.45, 1)
     const body = BODY_BY_NAME[selected] ?? BODY_BY_NAME.Tierra
-    const distance = THREE.MathUtils.damp(Math.max(viewDirection.length(), 0.1), Math.max(4.4, body.visualRadius * 5.4), 2.4, safeDelta)
+    const framingMultiplier = body.category === 'Espacio profundo' ? 9.4 : 5.4
+    const distance = THREE.MathUtils.damp(Math.max(viewDirection.length(), 0.1), Math.max(4.4, body.visualRadius * framingMultiplier), 2.4, safeDelta)
     viewDirection.normalize()
     cameraGoal.copy(smoothedTarget).addScaledVector(viewDirection, distance)
     controls.setLookAt(cameraGoal.x, cameraGoal.y, cameraGoal.z, smoothedTarget.x, smoothedTarget.y, smoothedTarget.z, false)
@@ -570,12 +935,40 @@ function SimulationEngine({ simulatedTimeRef, timeScaleRef, useSolarStore }) {
     if (timeScaleRef.current === 0 && lastTelemeteredBody.current === selected) return
     lastTelemeteredBody.current = selected
     const body = BODY_BY_NAME[selected]
+
+    if (body?.category === 'Espacio profundo') {
+      setTelemetry({
+        mode: 'blackHole',
+        massSolar: body.massSolar,
+        distanceLightYears: body.distanceLightYears,
+        schwarzschildRadiusKm: body.schwarzschildRadiusKm,
+        diskTemperatureK: body.diskTemperatureK,
+        simulatedDate: new Date(simulatedTimeRef.current).toISOString(),
+      })
+      return
+    }
+
+    if (body?.category === 'Observatorios') {
+      const earth = PLANETS[2]
+      const { radiusAU } = orbitalPosition(earth, simulatedTimeRef.current, scratchPosition)
+      setTelemetry({
+        mode: 'observatory',
+        distanceAU: radiusAU,
+        velocityKms: orbitalSpeedKms(earth, radiusAU),
+        altitudeKm: body.altitudeKm,
+        orbitPeriodMinutes: body.orbitPeriodMinutes,
+        launchYear: body.launchYear,
+        simulatedDate: new Date(simulatedTimeRef.current).toISOString(),
+      })
+      return
+    }
+
     if (!body || selected === 'Sol') {
-      setTelemetry({ distanceAU: 0, velocityKms: 0, simulatedDate: new Date(simulatedTimeRef.current).toISOString() })
+      setTelemetry({ mode: 'solar', distanceAU: 0, velocityKms: 0, simulatedDate: new Date(simulatedTimeRef.current).toISOString() })
       return
     }
     const { radiusAU } = orbitalPosition(body, simulatedTimeRef.current, scratchPosition)
-    setTelemetry({ distanceAU: radiusAU, velocityKms: orbitalSpeedKms(body, radiusAU), simulatedDate: new Date(simulatedTimeRef.current).toISOString() })
+    setTelemetry({ mode: 'orbit', distanceAU: radiusAU, velocityKms: orbitalSpeedKms(body, radiusAU), simulatedDate: new Date(simulatedTimeRef.current).toISOString() })
   }, -3)
   return null
 }
@@ -599,6 +992,12 @@ export default function SolarSystem({ useSolarStore }) {
       {PLANETS.map((body) => <OrbitPath body={body} key={`${body.name}-orbit`} />)}
       {PLANETS.map((body) => (
         <Planet body={body} key={body.name} simulatedTimeRef={simulatedTimeRef} timeScaleRef={timeScaleRef} registerBody={registerBody} setSelected={setSelected} />
+      ))}
+      {BLACK_HOLES.map((body) => (
+        <BlackHole body={body} key={body.name} registerBody={registerBody} setSelected={setSelected} />
+      ))}
+      {OBSERVATORIES.map((body) => (
+        <SpaceObservatory body={body} key={body.name} simulatedTimeRef={simulatedTimeRef} timeScaleRef={timeScaleRef} registerBody={registerBody} setSelected={setSelected} />
       ))}
       <CameraTracker bodyRefs={bodyRefs} useSolarStore={useSolarStore} />
     </>
